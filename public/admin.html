@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tuga WiFi — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0B1F2A; --panel:#123240; --amber:#F5A623; --mint:#35D2A0; --paper:#FBF6EC; --danger:#E4573D;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--ink); color:var(--paper); font-family:'Inter',sans-serif;
+    min-height:100vh; padding:28px 16px;
+  }
+  .wrap{ max-width:560px; margin:0 auto; }
+  h1{ font-family:'Sora',sans-serif; font-weight:800; font-size:26px; margin:0 0 4px; }
+  .sub{ color:#9DB4BE; font-size:14px; margin:0 0 24px; }
+  .card{ background:var(--panel); border:1px solid #23566d; border-radius:16px; padding:22px; margin-bottom:18px; }
+  h2{ font-family:'Sora',sans-serif; font-size:15px; margin:0 0 14px; color:var(--mint); text-transform:uppercase; letter-spacing:.06em; }
+  label{ display:block; font-size:13px; color:#B9CBD3; margin-bottom:6px; }
+  input, textarea{
+    width:100%; padding:11px 12px; border-radius:9px; border:1px solid #2B5A70;
+    background:#0E2A38; color:var(--paper); font-size:14px; font-family:'Inter',sans-serif;
+    margin-bottom:14px; outline:none;
+  }
+  textarea{ min-height:110px; resize:vertical; font-family:monospace; }
+  input:focus, textarea:focus{ border-color:var(--mint); }
+  button{
+    padding:12px 18px; border:none; border-radius:9px; cursor:pointer; font-weight:700;
+    font-family:'Sora',sans-serif; font-size:14px; background:var(--amber); color:#1a1305;
+  }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  .row{ display:flex; gap:10px; }
+  .row > *{ flex:1; }
+  .msg{ margin-top:12px; font-size:13.5px; }
+  .msg.error{ color:#FF9686; }
+  .msg.ok{ color:var(--mint); }
+  .stat{ display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1c4257; font-size:13.5px; }
+  .stat:last-child{ border-bottom:none; }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td{ text-align:left; padding:7px 4px; border-bottom:1px solid #1c4257; }
+  th{ color:#8FE3C3; font-weight:600; }
+  #app{ display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tuga WiFi — Admin</h1>
+  <p class="sub">Manage stock, price, and sales for your storefront.</p>
+
+  <div class="card" id="lockCard">
+    <h2>Enter PIN</h2>
+    <input type="password" id="pinInput" placeholder="Admin PIN" />
+    <button id="unlockBtn">Unlock</button>
+    <div class="msg" id="lockMsg"></div>
+  </div>
+
+  <div id="app">
+    <div class="card">
+      <h2>Overview</h2>
+      <div class="stat"><span>In stock</span><strong id="statStock">—</strong></div>
+      <div class="stat"><span>Sold total</span><strong id="statSold">—</strong></div>
+      <div class="stat"><span>Current price</span><strong id="statPrice">—</strong></div>
+    </div>
+
+    <div class="card">
+      <h2>Add codes to stock</h2>
+      <label for="stockText">Paste codes (one per line, or however they come out)</label>
+      <textarea id="stockText" placeholder="ABCD1234&#10;EFGH5678&#10;..."></textarea>
+      <button id="addStockBtn">Add to stock</button>
+      <div class="msg" id="addMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Price &amp; store name</h2>
+      <label for="bizName">Business name</label>
+      <input id="bizName" />
+      <div class="row">
+        <div>
+          <label for="currency">Currency</label>
+          <input id="currency" placeholder="NGN" />
+        </div>
+        <div>
+          <label for="price">Price</label>
+          <input id="price" type="number" min="1" step="1" />
+        </div>
+      </div>
+      <button id="saveSettingsBtn">Save settings</button>
+      <div class="msg" id="settingsMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent sales</h2>
+      <table>
+        <thead><tr><th>Code</th><th>Email</th><th>When</th></tr></thead>
+        <tbody id="soldBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  let PIN = '';
+
+  const lockCard = document.getElementById('lockCard');
+  const app = document.getElementById('app');
+  const lockMsg = document.getElementById('lockMsg');
+
+  document.getElementById('unlockBtn').addEventListener('click', async () => {
+    PIN = document.getElementById('pinInput').value;
+    lockMsg.textContent = 'Checking…';
+    lockMsg.className = 'msg';
+    const res = await fetchAdmin('GET');
+    if(res && res.ok){
+      lockCard.style.display = 'none';
+      app.style.display = 'block';
+      render(res.data);
+    } else {
+      lockMsg.textContent = 'Incorrect PIN.';
+      lockMsg.className = 'msg error';
+    }
+  });
+
+  async function fetchAdmin(method, body){
+    try{
+      const res = await fetch('/.netlify/functions/admin-data', {
+        method,
+        headers: { 'Content-Type':'application/json', 'X-Admin-Pin': PIN },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const data = await res.json();
+      return { ok: res.ok, data };
+    }catch(e){
+      return { ok:false, data:{ error:'Network error.' } };
+    }
+  }
+
+  function render(data){
+    const { settings, stock, sold } = data;
+    document.getElementById('statStock').textContent = stock.length;
+    document.getElementById('statSold').textContent = sold.length;
+    document.getElementById('statPrice').textContent = settings.currency + ' ' + settings.price;
+    document.getElementById('bizName').value = settings.businessName;
+    document.getElementById('currency').value = settings.currency;
+    document.getElementById('price').value = settings.price;
+
+    const body = document.getElementById('soldBody');
+    body.innerHTML = '';
+    sold.slice(0, 25).forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${s.code}</td><td>${s.email || '—'}</td><td>${new Date(s.soldAt).toLocaleString()}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  document.getElementById('addStockBtn').addEventListener('click', async () => {
+    const text = document.getElementById('stockText').value;
+    const addMsg = document.getElementById('addMsg');
+    if(!text.trim()){ addMsg.textContent = 'Paste in some codes first.'; addMsg.className='msg error'; return; }
+    addMsg.textContent = 'Adding…'; addMsg.className = 'msg';
+    try{
+      const res = await fetch('/.netlify/functions/admin-add-stock', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'X-Admin-Pin': PIN },
+        body: JSON.stringify({ text })
+      });
+      const data = await res.json();
+      if(res.ok){
+        addMsg.textContent = `Added ${data.added} code${data.added===1?'':'s'}${data.skippedDuplicates? ' ('+data.skippedDuplicates+' duplicates skipped)':''}. Now in stock: ${data.inStock}.`;
+        addMsg.className = 'msg ok';
+        document.getElementById('stockText').value = '';
+        const refreshed = await fetchAdmin('GET');
+        if(refreshed.ok) render(refreshed.data);
+      } else {
+        addMsg.textContent = data.error || 'Could not add codes.';
+        addMsg.className = 'msg error';
+      }
+    }catch(e){
+      addMsg.textContent = 'Network error.'; addMsg.className = 'msg error';
+    }
+  });
+
+  document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+    const settingsMsg = document.getElementById('settingsMsg');
+    const businessName = document.getElementById('bizName').value.trim();
+    const currency = document.getElementById('currency').value.trim();
+    const price = parseFloat(document.getElementById('price').value);
+    if(!businessName || !currency || !price || price <= 0){
+      settingsMsg.textContent = 'Fill in all fields with a valid price.';
+      settingsMsg.className = 'msg error';
+      return;
+    }
+    settingsMsg.textContent = 'Saving…'; settingsMsg.className = 'msg';
+    const res = await fetchAdmin('POST', { businessName, currency, price });
+    if(res.ok){
+      settingsMsg.textContent = 'Saved.'; settingsMsg.className = 'msg ok';
+      const refreshed = await fetchAdmin('GET');
+      if(refreshed.ok) render(refreshed.data);
+    } else {
+      settingsMsg.textContent = res.data.error || 'Could not save.'; settingsMsg.className = 'msg error';
+    }
+  });
+</script>
+</body>
+</html>
